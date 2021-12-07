@@ -1,5 +1,7 @@
-﻿using System.Collections.Immutable;
+﻿using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
+using System.Threading;
 using Core.Exceptions;
 using Core.Services;
 using Core.Services.Implementations;
@@ -76,7 +78,7 @@ namespace Tests
         }
 
         [Test]
-        public void Resolve_CompletelyNewInstancesAreCreatedSuccess()
+        public void Resolve_SameInstancesAreCreatedSuccess()
         {
             var firstResult = DependenciesProvider.Resolve<ITest>();
             var secondResult = DependenciesProvider.Resolve<ITest>();
@@ -85,7 +87,7 @@ namespace Tests
         }
 
         [Test]
-        public void Resolve_CompletelyNewEnumerableInstancesAreCreatedSuccess()
+        public void Resolve_SameEnumerableContentsAreCreatedSuccess()
         {
             var firstResult = DependenciesProvider.ResolveAll<IService<IRepository>>().ToImmutableList();
             var secondResult = DependenciesProvider.ResolveAll<IService<IRepository>>().ToImmutableList();
@@ -93,6 +95,41 @@ namespace Tests
             Assert.AreEqual(firstResult.Count, secondResult.Count);
             foreach (var dependency in firstResult)
                 Assert.True(secondResult.Any(secondItem => secondItem.Equals(dependency)));
+        }
+
+        [Test]
+        public void Resolve_SameInstancesAreSharedAcrossMultipleThreads()
+        {
+            var dependency = DependenciesProvider.Resolve<ITest>();
+            const int threadsCount = 1000;
+            for (var i = 0; i < threadsCount; i++)
+            {
+                new Thread(dependency =>
+                {
+                    var secondDependency = DependenciesProvider.Resolve<ITest>();
+                    Assert.AreSame(dependency, secondDependency);
+                }).Start(dependency);
+            }
+        }
+
+        [Test]
+        public void Resolve_SameEnumerableContentsAreSharedAcrossMultipleThreads()
+        {
+            var dependencies = DependenciesProvider.ResolveAll<IService<IRepository>>();
+            const int threadsCount = 1000;
+            for (var i = 0; i < threadsCount; i++)
+            {
+                new Thread(dependencies =>
+                {
+                    var sameDependencies = DependenciesProvider.ResolveAll<IService<IRepository>>();
+                    var dependenciesCasted = (IEnumerable<IService<IRepository>>) dependencies;
+                    Assert.AreEqual(dependenciesCasted.Count(), sameDependencies.Count());
+                    foreach (var dependency in dependenciesCasted)
+                    {
+                        Assert.Contains(dependency, sameDependencies.ToImmutableList());
+                    }
+                }).Start(dependencies);
+            }
         }
 
         [Test]
